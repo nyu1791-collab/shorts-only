@@ -15,9 +15,9 @@ def color(value):
 
 def export(clip, root, profile, source_video=None, source_srt=None, start=0, end=None):
     import pycapcut as cc
-    clip, root = Path(clip).resolve(), Path(root).expanduser().resolve()
+    clip, root = Path(clip).expanduser().resolve(), Path(root).expanduser().resolve()
     root.mkdir(parents=True, exist_ok=True)
-    source = Path(source_video).resolve() if source_video else clip / 'video.mp4'
+    source = Path(source_video).expanduser().resolve() if source_video else clip / 'video.mp4'
     receipt_path = clip / 'render.json'
     receipt = json.loads(receipt_path.read_text(encoding='utf-8')) if receipt_path.is_file() and not source_video else {}
     if source_video:
@@ -27,7 +27,9 @@ def export(clip, root, profile, source_video=None, source_srt=None, start=0, end
     mode = (receipt.get('captions') or {}).get('caption_mode')
     # Burned captions remain visible: do not overlay a second subtitle track.
     burned = mode not in ('editable', 'none', 'off')
-    captions_path = Path(source_srt).resolve() if source_srt else clip / 'captions.srt'
+    captions_path = Path(source_srt).expanduser().resolve() if source_srt else clip / 'captions.srt'
+    if source_srt and not captions_path.is_file():
+        raise FileNotFoundError(f'指定した字幕が見つかりません: {captions_path}')
     captions = read_srt(captions_path) if source_srt or not source_video else []
     omitted = []
     cuts = profile.get('cuts')
@@ -64,7 +66,10 @@ def export(clip, root, profile, source_video=None, source_srt=None, start=0, end
             upper_left_x=x, upper_left_y=y, upper_right_x=x+w, upper_right_y=y,
             lower_left_x=x, lower_left_y=y+h, lower_right_x=x+w, lower_right_y=y+h))
     if profile.get('video_crop'):
-        material = cropped(profile['video_crop'])
+        try:
+            material = cropped(profile['video_crop'])
+        except Exception as error:
+            omitted.append({'feature':'video_crop','reason':str(error)})
     script.add_track(cc.TrackType.video, 'video')
     for part in timeline['segments']:
         segment = cc.VideoSegment(material, cc.trange_seconds(part['target_start'], duration=part['duration']),
@@ -79,24 +84,39 @@ def export(clip, root, profile, source_video=None, source_srt=None, start=0, end
         script.add_segment(segment, 'video')
     face = profile.get('face') or {}
     if face.get('crop'):
-        face_material = cropped(face['crop'])
-        script.add_track(cc.TrackType.video, 'face', relative_index=2)
-        for part in timeline['segments']:
-            script.add_segment(cc.VideoSegment(face_material, cc.trange_seconds(part['target_start'], duration=part['duration']),
+        try:
+            face_material = cropped(face['crop'])
+            segments = [cc.VideoSegment(face_material, cc.trange_seconds(part['target_start'], duration=part['duration']),
                 source_timerange=cc.trange_seconds(part['source_start'], end=part['source_end']), volume=0,
                 clip_settings=cc.ClipSettings(scale_x=face.get('scale',0.35), scale_y=face.get('scale',0.35),
-                                              transform_x=face.get('x',0), transform_y=face.get('y',0.55))), 'face')
+                                              transform_x=face.get('x',0), transform_y=face.get('y',0.55)))
+                        for part in timeline['segments']]
+            script.add_track(cc.TrackType.video, 'face', relative_index=2)
+            for segment in segments:
+                script.add_segment(segment, 'face')
+        except Exception as error:
+            omitted.append({'feature':'face','reason':str(error)})
     mapped = remap(captions, timeline['segments'])
     (project / 'timeline-captions.srt').write_text(srt_text(mapped), encoding='utf-8')
     if not burned and mapped:
-        script.add_track(cc.TrackType.text, 'captions')
-        font = getattr(cc.FontType, profile.get('font',''), None)
+        lane_ends = []
+        font_name = profile.get('font') or ''
+        font = getattr(cc.FontType, font_name, None)
+        if font_name and font is None:
+            omitted.append({'feature':'font','reason':f'{font_name} が見つからないため標準フォントを使用'})
         for cue in mapped:
-            segment = cc.TextSegment(cue['text'], cc.trange_seconds(cue['start'], end=cue['end']), font=font,
+            timerange = cc.trange_seconds(cue['start'], end=cue['end'])
+            lane = next((i for i, end in enumerate(lane_ends) if end <= timerange.start), len(lane_ends))
+            track_name = f'captions-{lane+1}'
+            if lane == len(lane_ends):
+                lane_ends.append(0)
+                script.add_track(cc.TrackType.text, track_name)
+            segment = cc.TextSegment(cue['text'], timerange, font=font,
                                      style=cc.TextStyle(size=profile.get('subtitle_size',8), bold=True, align=1,
                                                         color=color(profile.get('subtitle_color','#FFFFFF')), auto_wrapping=True),
-                                     clip_settings=cc.ClipSettings(transform_y=profile.get('subtitle_y',-0.65)))
-            script.add_segment(segment, 'captions')
+                                     clip_settings=cc.ClipSettings(transform_y=profile.get('subtitle_y',-0.65) + lane * 0.14))
+            script.add_segment(segment, track_name)
+            lane_ends[lane] = timerange.end
     title = (receipt.get('selection') or {}).get('title', '')
     if title:
         script.add_track(cc.TrackType.text, 'heading')
@@ -107,13 +127,18 @@ def export(clip, root, profile, source_video=None, source_srt=None, start=0, end
     # Explicitly named decorative template tracks can carry user-owned Pro resources.
     # Missing optional resources are recorded and omitted; the base draft is still saved.
     if profile.get('template_draft'):
+        template = None
         try:
             template = cc.DraftFolder(str(root)).load_template(profile['template_draft'])
-            for index, item in enumerate(profile.get('template_tracks', [])):
-                track = template.get_imported_track(getattr(cc.TrackType, item['kind']), name=item['name'])
-                script.import_track(template, track, new_name=f'template-{index}', relative_index=10+index)
         except Exception as error:
             omitted.append({'feature':'template_tracks','reason':str(error)})
+        if template is not None:
+            for index, item in enumerate(profile.get('template_tracks', [])):
+                try:
+                    track = template.get_imported_track(getattr(cc.TrackType, item['kind']), name=item['name'])
+                    script.import_track(template, track, new_name=f'template-{index}', relative_index=10+index)
+                except Exception as error:
+                    omitted.append({'feature':'template_track','track':item,'reason':str(error)})
     script.save()
     record = {'status':'created_not_opened_in_capcut', 'draft':str(project), 'source':str(clip),
               'timeline':timeline, 'subtitle_track':('unknown_source_preserved' if mode is None else 'burned_in_source') if burned else 'editable_phrases',

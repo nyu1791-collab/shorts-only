@@ -14,6 +14,12 @@ def show(value):
     print(json.dumps(value, ensure_ascii=False, indent=2), flush=True)
 
 
+def show_drafts(job, root=None, hook=None):
+    records = clipforge.export_drafts(job, root, hook)
+    current = store.get(job['id'])
+    show({'status':current['status'], 'message':current['error'], 'drafts':records})
+
+
 def run_one(url, streamer, output_format=None, count=None, hook=None, plan=False, new=False):
     profile = preset(str(streamer))
     if count is not None:
@@ -86,7 +92,8 @@ def main():
                 try:
                     return run_one(item['url'],str(item['streamer']),item.get('format'),item.get('clips'),item.get('hook'),args.plan)
                 except Exception as error:
-                    print(f"{item.get('streamer')}: {error}", file=sys.stderr, flush=True)
+                    streamer = item.get('streamer', '?') if isinstance(item, dict) else '?'
+                    print(f"{streamer}: {error}", file=sys.stderr, flush=True)
                     return 1
             with ThreadPoolExecutor(max_workers=max(1,args.workers)) as pool:
                 codes = list(pool.map(process, entries))
@@ -105,19 +112,24 @@ def main():
             return subprocess.run(cmd, cwd=clipforge_dir()).returncode
         elif args.action == 'resume':
             job = store.get(args.job)
-            if job['status'] in ('collected','draft_pending','completed'):
+            previous = store.last_production(job['id'])
+            if job['status'] == 'completed_no_clips':
+                show({'status':job['status'], 'output':job['output'], 'message':job['error']})
+            elif job['status'] in ('collected','draft_pending','completed','drafts_ready') and (previous is None or previous['exit_code'] == 0):
                 if job['format'] != 'mp4':
+                    Path(job['output']).mkdir(parents=True, exist_ok=True)
                     with FileLock(str(Path(job['output'])/'controller.lock'),timeout=0):
-                        show(clipforge.export_drafts(job))
+                        show_drafts(job)
                 else:
                     show({'status':job['status'], 'output':job['output']})
             else:
-                return clipforge.execute(job, resume=True)
+                return clipforge.resume(job)
         elif args.action == 'draft':
             if args.job:
                 job = store.get(args.job)
+                Path(job['output']).mkdir(parents=True, exist_ok=True)
                 with FileLock(str(Path(job['output'])/'controller.lock'),timeout=0):
-                    show(clipforge.export_drafts(job,args.drafts_dir,args.hook))
+                    show_drafts(job,args.drafts_dir,args.hook)
             else:
                 from .capcut import export
                 root = args.drafts_dir or clipforge.drafts_dir()
@@ -141,6 +153,6 @@ def main():
     except Timeout:
         print('この制作は処理中です。二重起動は行いません。', file=sys.stderr)
         return 1
-    except (OSError, ValueError, KeyError, ImportError, subprocess.SubprocessError) as error:
+    except Exception as error:
         print(f'実行できませんでした: {error}', file=sys.stderr)
         return 1

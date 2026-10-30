@@ -51,9 +51,17 @@ def attempt(jid, action):
         return db.execute('INSERT INTO attempts(job,action,started) VALUES (?,?,?)', (jid, action, time.time())).lastrowid
 
 
-def finish(aid, code):
+def finish(aid, code, action=None):
     with connect() as db:
         db.execute('UPDATE attempts SET finished=?,exit_code=? WHERE id=?', (time.time(), code, aid))
+        if action:
+            db.execute('UPDATE attempts SET action=? WHERE id=?', (action, aid))
+
+
+def last_production(jid):
+    with connect() as db:
+        row = db.execute("SELECT action,finished,exit_code FROM attempts WHERE job=? AND action IN ('produce','resume','launch_failed') ORDER BY id DESC LIMIT 1", (jid,)).fetchone()
+    return dict(row) if row else None
 
 
 def listing():

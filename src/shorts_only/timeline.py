@@ -48,14 +48,18 @@ def read_srt(path):
 
 def build(duration, cues, hook='auto', cuts=None, hook_seconds=None):
     # Hook points come from supplied clip-relative peaks or a cheap caption-text heuristic.
+    body = [(max(0, float(start)), min(duration, float(end)))
+            for start, end in (cuts if cuts is not None else [(0, duration)])]
+    body = [(start, end) for start, end in body if end > start]
+    if not body:
+        return {'segments': [], 'duration': 0, 'hook_method': 'none'}
     peaks = list(hook_seconds or [])[:3]
     method = 'supplied_peaks' if peaks else 'caption_heuristic'
-    body = cuts if cuts is not None else [(0, duration)]
     if not peaks and hook != 'off':
         eligible = [c for c in cues if any(c['start'] >= start and c['start'] < end for start,end in body)]
         ranked = sorted(eligible, key=lambda c: sum(c['text'].count(k) for k in ('！', '!', '？', '?', 'すご', 'やば', 'えっ', 'まじ')), reverse=True)
         for cue in ranked:
-            point = max(0, min(float(cue['start']), duration - 1))
+            point = float(cue['start'])
             if all(abs(point - p) >= 1 for p in peaks):
                 peaks.append(point)
             if len(peaks) == 3:
@@ -65,10 +69,10 @@ def build(duration, cues, hook='auto', cuts=None, hook_seconds=None):
     ranges = []
     if hook != 'off':
         for point in peaks:
-            start = max(0, min(float(point), duration))
-            end = min(duration, start + 1)
-            if end > start:
-                ranges.append((start, end, 'preview'))
+            start = float(point)
+            containing = next(((a, b) for a, b in body if a <= start < b), None)
+            if containing:
+                ranges.append((start, min(containing[1], start + 1), 'preview'))
     for start, end in body:
         start, end = max(0, float(start)), min(duration, float(end))
         if end > start:
@@ -77,6 +81,8 @@ def build(duration, cues, hook='auto', cuts=None, hook_seconds=None):
     for start, end, kind in ranges:
         sequence.append({'source_start': start, 'source_end': end, 'target_start': offset, 'duration': end-start, 'kind': kind})
         offset += end-start
+    if not any(part['kind'] == 'preview' for part in sequence):
+        method = 'none'
     return {'segments': sequence, 'duration': offset, 'hook_method': method if hook != 'off' else 'off'}
 
 
@@ -88,7 +94,7 @@ def remap(cues, sequence):
             if end > start:
                 mapped.append({'start': part['target_start'] + start-part['source_start'],
                                'end': part['target_start'] + end-part['source_start'], 'text': cue['text']})
-    return mapped
+    return sorted(mapped, key=lambda cue: cue['start'])
 
 
 def srt_text(cues):
