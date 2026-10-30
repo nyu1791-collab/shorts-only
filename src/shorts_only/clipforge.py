@@ -5,18 +5,16 @@ from pathlib import Path
 import subprocess
 from filelock import FileLock
 from . import store
-from .settings import clipforge_dir, location
+from .settings import clipforge_dir, location, engine_command
 
 
 def command(job, resume=False):
-    engine = clipforge_dir()
-    python = engine / '.venv' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
-    script = engine / 'tools' / ('produce_with_gemini.py' if resume else 'produce_formats.py')
     if resume:
-        return [str(python), str(script), '--resume', '--output', str(production_dir(job))]
+        return engine_command('produce_with_gemini.py', '--resume', '--output', production_dir(job))
     profile = json.loads(job['profile'])
-    return [str(python), str(script), job['url'], '--mode', 'tiktok' if job['format']=='mp4' else 'tiktok-capcut',
-            '--output', job['output'], '--clips', str(profile.get('clips',5))]
+    return engine_command('produce_formats.py', job['url'], '--mode',
+                          'tiktok' if job['format']=='mp4' else 'tiktok-capcut',
+                          '--output', job['output'], '--clips', profile.get('clips',5))
 
 
 def production_dir(job):

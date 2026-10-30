@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml
 from filelock import FileLock, Timeout
 from . import clipforge, store
-from .settings import clipforge_dir, data_dir, preset
+from .settings import clipforge_dir, preset, engine_command
 
 
 def show(value):
@@ -18,6 +18,22 @@ def show_drafts(job, root=None, hook=None):
     records = clipforge.export_drafts(job, root, hook)
     current = store.get(job['id'])
     show({'status':current['status'], 'message':current['error'], 'drafts':records})
+
+
+def continue_job(job):
+    previous = store.last_production(job['id'])
+    if job['status'] == 'completed_no_clips':
+        show({'status':job['status'], 'output':job['output'], 'message':job['error']})
+    elif job['status'] in ('collected','draft_pending','completed','drafts_ready') and (previous is None or previous['exit_code'] == 0):
+        if job['format'] != 'mp4':
+            Path(job['output']).mkdir(parents=True, exist_ok=True)
+            with FileLock(str(Path(job['output'])/'controller.lock'),timeout=0):
+                show_drafts(job)
+        else:
+            show({'status':job['status'], 'output':job['output']})
+    else:
+        return clipforge.resume(job)
+    return 0
 
 
 def run_one(url, streamer, output_format=None, count=None, hook=None, plan=False, new=False):
@@ -36,8 +52,8 @@ def run_one(url, streamer, output_format=None, count=None, hook=None, plan=False
         return 0
     job, created = store.create(url, profile, fmt, new)
     if not created:
-        show({'existing_job':job['id'], 'status':job['status'], 'next':f"python main.py resume {job['id']}", 'message':'既存データを保持しています。新規依頼にする場合だけ --new を指定してください'})
-        return 0
+        print(f"既存の制作を再利用します: {job['id']}", flush=True)
+        return continue_job(job)
     try:
         return clipforge.execute(job)
     except Exception as error:
@@ -107,23 +123,10 @@ def main():
             else:
                 show(store.listing())
         elif args.action == 'connect':
-            job = {'format':'draft','output':str(data_dir()),'profile':'{}','url':''}
-            cmd = clipforge.command(job, resume=True)[:2] + ['--connections']
+            cmd = engine_command('produce_with_gemini.py', '--connections')
             return subprocess.run(cmd, cwd=clipforge_dir()).returncode
         elif args.action == 'resume':
-            job = store.get(args.job)
-            previous = store.last_production(job['id'])
-            if job['status'] == 'completed_no_clips':
-                show({'status':job['status'], 'output':job['output'], 'message':job['error']})
-            elif job['status'] in ('collected','draft_pending','completed','drafts_ready') and (previous is None or previous['exit_code'] == 0):
-                if job['format'] != 'mp4':
-                    Path(job['output']).mkdir(parents=True, exist_ok=True)
-                    with FileLock(str(Path(job['output'])/'controller.lock'),timeout=0):
-                        show_drafts(job)
-                else:
-                    show({'status':job['status'], 'output':job['output']})
-            else:
-                return clipforge.resume(job)
+            return continue_job(store.get(args.job))
         elif args.action == 'draft':
             if args.job:
                 job = store.get(args.job)
