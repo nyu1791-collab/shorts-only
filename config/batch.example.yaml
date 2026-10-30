@@ -1,0 +1,8 @@
+# One source per item. Set actual URLs in a local file outside the repository.
+jobs:
+  - streamer: '01'
+    url: https://example.com/archive-a.mp4
+    format: draft
+  - streamer: '02'
+    url: https://example.com/archive-b.mp4
+    format: mp4

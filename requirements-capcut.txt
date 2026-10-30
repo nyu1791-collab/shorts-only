@@ -1,0 +1,2 @@
+-r requirements.txt
+pycapcut==0.0.4
