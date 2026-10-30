@@ -22,7 +22,10 @@ def production_dir(job):
 
 
 def clips(job):
-    return sorted(p for p in (production_dir(job) / 'clips' / 'clips').glob('clip-*') if (p/'video.mp4').is_file())
+    base = production_dir(job)
+    found = {p.name:p for p in (base/'completed').glob('clip-*/clips/clip-*') if (p/'video.mp4').is_file()}
+    found.update({p.name:p for p in (base/'clips'/'clips').glob('clip-*') if (p/'video.mp4').is_file()})
+    return [found[name] for name in sorted(found)]
 
 
 def drafts_dir():
@@ -60,16 +63,23 @@ def export_drafts(job, override=None, hook=None):
     output.mkdir(parents=True, exist_ok=True)
     manifest = output / 'drafts.json'
     records = json.loads(manifest.read_text(encoding='utf-8')) if manifest.is_file() else []
-    finished = {r['source'] for r in records if (Path(r['draft'])/'draft_content.json').is_file()
+    finished = {r.get('clip_key', r['source']) for r in records if (Path(r['draft'])/'draft_content.json').is_file()
                 and Path(r['draft']).parent.resolve() == root.resolve() and r.get('profile') == profile}
     collected = clips(job)
     errors = []
     for clip in collected:
-        if str(clip.resolve()) in finished:
+        clip_key = str(clip.resolve())
+        try:
+            clip_key = json.loads((clip/'render.json').read_text(encoding='utf-8')).get('key') or clip_key
+        except (OSError, ValueError, AttributeError):
+            pass
+        if clip_key in finished or str(clip.resolve()) in finished:
             continue
         aid = store.attempt(job['id'], 'draft:' + clip.name)
         try:
-            records.append(export(clip, root, profile))
+            record = export(clip, root, profile)
+            record['clip_key'] = clip_key
+            records.append(record)
             save_json(manifest, records)
             store.finish(aid, 0)
         except Exception as error:
