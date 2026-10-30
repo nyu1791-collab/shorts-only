@@ -9,8 +9,15 @@
 | [WyattBlue/auto-editor](https://github.com/WyattBlue/auto-editor) | 音量や動きによる区間選択。余白を残す無音削除 | 時刻対応と余白の考え方を参考。依存追加はせず、必要時のみFFmpegの無音検出を使用 |
 | [aaurelions/short-video-maker](https://github.com/aaurelions/short-video-maker) | テキストから教育用ショート生成。Gemini、SQLite、再開、APIキーローテーション | SQLiteで制作を分ける設計のみ参考。キーローテーションや制限回避は採用しない |
 | [gyoridavid/short-video-maker](https://github.com/gyoridavid/short-video-maker) | Kokoro TTS・Whisper・Pexels・Remotionによる生成、MCP/REST入口 | 各処理を入口から分離する構成を参考。MCPサーバー自体は今回未実装 |
-| [nyu1791-collab/ClipForge](https://github.com/nyu1791-collab/ClipForge) | 既存の話題選定、Transcribe、整文、素材取得、描画、非公開保存 | 実制作のバックエンドとしてそのまま呼び出す |
+| [nyu1791-collab/ClipForge](https://github.com/nyu1791-collab/ClipForge) | 既存の話題選定、Transcribe、整文、素材取得、描画、非公開保存 | 過去版の工程分離を参考。現行版はこのリポジトリ内で完結し、ClipForgeを実行しない |
 
 pyCapCut上流のGitHubライセンス欄は取得時点で未表示でした。ソースや素材の複製は行わず、PyPIのライブラリを外部依存として使用しています。テンプレート・フォント・Pro素材の権利や利用可否はそれぞれの提供元の条件に従います。
 
-素材取得について、今回のURL対応はClipForgeに委譲します。ふわっちのアーカイブ取得やコメント取得を追加実装したとは扱いません。チャット急増を起点にする検出、顔の自動追跡、CapCutの自動最終書き出し、ネイティブ単語カラオケの生成も今回の実装範囲には含まれません。
+素材取得は本リポジトリ内の直接HTTPS取得またはyt-dlpを使用します。ふわっちのアーカイブ取得やコメント取得を追加実装したとは扱いません。チャット急増を起点にする検出、顔の自動追跡、CapCutの自動最終書き出し、ネイティブ単語カラオケの生成も今回の実装範囲には含まれません。
+
+## 編集データの受け渡しで追加した参考元
+
+- [OpenTimelineIO](https://github.com/AcademySoftwareFoundation/OpenTimelineIO): カット情報と素材参照を媒体本体と分ける設計。公式Pythonライブラリを任意依存として使用し、OTIO出力を実装しました。
+- [LosslessCut](https://github.com/mifi/lossless-cut): 動画を再描画せず区間・マーカーを扱う考え方。区間CSVと素材参照の書き出しに取り入れています。LosslessCutのコードや独自形式を複製したものではありません。
+
+OpenTimelineIO 0.18.1でサンプルのOTIOファイルを作成しました。個々の編集ソフトでの表示実績とは区別します。

@@ -1,12 +1,12 @@
 # shorts-only
 
-配信切り抜きをショート動画とCapCutドラフトにまとめる、PC用のPython CLIです。制作は既存の[ClipForge](https://github.com/nyu1791-collab/ClipForge)へ依頼し、配信者プリセットと制作状態をこのリポジトリで管理します。
+ローカル動画や公開動画URLから、縦型ショート動画・編集可能なCapCutドラフトを制作する独立したPythonアプリです。**他のリポジトリ、ClipForgeの環境、GitHub Actionsを必要としません。**
 
-15〜60秒・5本・9:16を目安にします。尺や本数が目標に届かなくても素材を捨てず、品質監査・追加の査読モデル・目標不足による自動再生成は行いません。元素材不存在や接続失敗は、その事実を表示します。
+15〜60秒・5本を目安にします。素材が短い、本数が少ない、演出を付けられないことを理由に停止・水増し・自動再生成する品質ゲートはありません。
 
-## 最初の準備
+## 準備
 
-Python 3.11以降と、CapCutのドラフトを開くWindows PCを用意します。GitHub CLIはClipForge制作時に使います。既存の動画からドラフトを作るだけならモデル認証は不要です。
+Python 3.11以降とFFmpeg/FFprobeを用意します。CapCutドラフトを使う場合はPC版CapCutも必要です。
 
 ```powershell
 git clone https://github.com/nyu1791-collab/shorts-only.git
@@ -17,145 +17,87 @@ Copy-Item .env.example .env
 Copy-Item config\streamers.example.yaml config\streamers.yaml
 ```
 
-`.env` の `CLIPFORGE_DIR` に隣のClipForgeを、`CAPCUT_DRAFTS_DIR` にCapCut設定画面の「ドラフト保存先」を指定します。Windowsパスは例のように `/` 区切りで記載できます。
+`.env` の `CAPCUT_DRAFTS_DIR` にCapCut設定画面の実際のドラフト保存先を指定します。MP4だけならCapCutやpyCapCutは不要で、`requirements.txt` の基本依存だけで動きます。
 
-```dotenv
-CLIPFORGE_DIR=C:/work/ClipForge
-CAPCUT_DRAFTS_DIR=C:/Users/your-name/AppData/Local/CapCut/User Data/Projects/com.lveditor.draft
-```
-
-CapCut用フォルダの実際の位置はPCの設定を使ってください。出力したドラフトはCapCutで開き、必要な調整後に書き出します。CapCut Proの購入やライセンス認証をこのプログラムから行うことはありません。
-
-ClipForgeをまだPCに用意していなければ、隣に取得して制御用Python環境を作ります。推論や重い描画は従来どおりActions・Vertex・Colab側で動きます。
+動画サイトのURLを取得する場合は、追加で次を導入します。直接のMP4などのHTTPSファイルはPythonの標準機能で取得します。
 
 ```powershell
-cd ..
-git clone https://github.com/nyu1791-collab/ClipForge.git
-cd ClipForge
-py -3 -m venv .venv
-.\.venv\Scripts\python -m pip install -e .
-cd ..\shorts-only
-gh auth status
-.\.venv\Scripts\python main.py connect
+.\.venv\Scripts\python -m pip install -r requirements-download.txt
 ```
 
-既存のGitHub/Vertex/Colab認証を利用します。接続設定は[ClipForgeのQUICK_START](https://github.com/nyu1791-collab/ClipForge/blob/main/docs/QUICK_START.md)にあります。`connect` は登録案内の表示で、推論の成功確認ではありません。`unknown` は一覧権限が確認できない状態です。別APIキーへの自動切り替えやキーローテーションは追加していません。Antigravity SDKによるTranscribeの置換は実施しておらず、現行ClipForgeの接続経路を使います。
+Windowsでは `run-windows.cmd` から操作できます。手動なら `.venv` のPythonで `main.py` を実行します。
 
-Windowsでは以後 `run-windows.cmd` が仮想環境を用意してコマンドを実行できます。Linux/macOSでは `python main.py ...` を同じように実行します。
+## 単独で制作する
 
-## 操作
-
-まずは接続・課金を行わず、制作指示を表示できます。
+元動画と、同じ時間軸の字幕を使う例：
 
 ```powershell
-.\run-windows.cmd run "https://kick.com/example/videos/archive-id" --streamer_id 01 --plan
+.\run-windows.cmd run C:/work/archive.mp4 --srt C:/work/archive.srt --streamer_id 01 --format mp4
+.\run-windows.cmd run C:/work/archive.mp4 --srt C:/work/archive.srt --streamer_id 01 --format draft
 ```
 
-配信者01のCapCut向け素材とドラフトを制作：
+`config/streamers.yaml` の配信者設定に `cuts: [[120,165],[340,385]]` を指定すれば、その区間を採用します。区間指定がなく字幕がある場合は感嘆表現などを手掛かりに抜粋します。字幕も区間指定もない基本モードでは、動画全体から間隔を置いて抜粋します。**この基本モードをAIによる撮れ高判定とは表示しません。** 選定方式は `selections.json` に記録します。
+
+| 形式 | 出力 |
+|---|---|
+| `draft` | 元動画の採用区間を直接参照するCapCutドラフト。中間MP4を描画しない |
+| `mp4` | 縦型MP4。字幕があれば焼き込み、元SRTも保持 |
+| `both` | MP4とドラフト。文字起こしを二重に依頼しない |
+
+ドラフトで加えたプレビュー・装飾は、別途生成したMP4には反映されません。ドラフトを調整した完成動画はCapCutから書き出してください。
+
+## 任意のGemini制作
 
 ```powershell
-.\run-windows.cmd run "https://kick.com/example/videos/archive-id" --streamer_id 01 --format draft
+.\.venv\Scripts\python -m pip install -r requirements-ai.txt
+$env:GOOGLE_CLOUD_PROJECT = '利用するプロジェクトID'
+# このPCでGoogle CloudのADC認証を準備したうえで実行します。
+.\run-windows.cmd run C:/work/archive.mp4 --streamer_id 01 --format draft --ai
 ```
 
-字幕入りMP4を制作：
+明示した `--ai` またはプリセットの `analysis: gemini` だけがVertexを使用します。
 
-```powershell
-.\run-windows.cmd run "https://example.com/archive.mp4" --streamer_id 02 --format mp4
-```
+1. Gemini 3.8 Flashで音声から採用区間を選ぶ。
+2. 採用区間だけをGemini 3.5 Transcribeで単語時刻・話者付き文字起こしする。
+3. Gemini 3.5 Flashで字幕本文を整える。時刻を推定し直さない。
 
-`--format both` は、1回のCapCut向け制作から「字幕を焼き込まないMP4＋SRT」とドラフトを保存します。モデル処理を2回発注しません。冒頭フックやプリセットの装飾はドラフトに反映されます。ドラフトのタイムラインを反映したMP4はCapCutから書き出してください。`--format mp4` の字幕・レイアウトはClipForgeのTikTok設定を使用します。
+モデル名はプリセットの `selection_model`、`transcription_model`、`cleanup_model` で明示できます。プロジェクトは `project` または `GOOGLE_CLOUD_PROJECT`、接続はVertexです。別APIキーへの暗黙切替やSDK経由のTranscribe置換はありません。モデルの提供可否・権限・料金は接続先に依存します。
 
-複数配信者を並列に進める場合は `config/batch.example.yaml` を参考に、PC上の個人用YAMLを作ります。
+既存のSRTを指定した場合はその時刻と本文を使い、文字起こし・整文の新規要求を省略します。
+
+成功した応答・音声を再利用します。一時的な429・対象5xx・通信障害のみ合計3回まで再試行します。任意の整文が完了しなかった場合は理由を残して元の文字起こし本文を使います。原単語時刻・話者・元SRTを保存し、字幕不足を推測で補いません。使用量は `model-usage.jsonl` に工程別で記録します。
+
+## 配信者設定・並列・続行
+
+配信者ごとの色、フォント、字幕位置、固定ワイプ、冒頭の最大3プレビュー、本編カットを `config/streamers.yaml` に設定します。テンプレートと装飾の設定例はサンプルYAMLを参照してください。利用できない任意の装飾は省いて理由を記録します。CapCutのPro素材はPC側の契約・ダウンロードに依存します。
 
 ```powershell
 .\run-windows.cmd batch C:/work/private-batch.yaml --workers 2
 .\run-windows.cmd jobs
-.\run-windows.cmd jobs --job 制作ID
 .\run-windows.cmd resume 制作ID
-```
-
-既存URLを再指定すると保存済みの制作を再利用し、そのまま再接続・回収または残りのドラフト作成へ進みます。別の新規依頼にしたい場合だけ `run --new` を使います。`resume` は既存Runの監視・回収へ再接続します。失敗したAPI要求を新たなRunで再試行する指示にはなりません。ドラフト待ちの場合は回収済み素材だけを使います。アプリを止めても外部ActionsのRunが終了するとは限らないため、保存済みRunへ再接続してください。
-
-実行ファイルが見つからないなど、制作プロセスを起動できなかった場合は、設定を直して `resume 制作ID` で同じ依頼を開始できます。既にプロセスが実行されて成否不明の場合は新規投入せず、保存済みRunを使います。1本のドラフト作成に失敗しても残りは続行し、成功済みドラフトは次回も再利用します。制作側が失敗しているときは、回収済み分のドラフトを作れても `partial` として記録します。
-
-回収済みクリップだけからドラフト作成：
-
-```powershell
-.\run-windows.cmd draft --clip C:/work/clip-001 --streamer_id 01
 .\run-windows.cmd draft --job 制作ID
 ```
 
-`--clip` には `video.mp4` と、あれば `captions.srt` / `render.json` を含むフォルダを指定します。ClipForgeの `caption_mode: editable` が記録された素材には編集可能な字幕を置きます。字幕焼き込み済み・状態不明の素材は映像を保ち、字幕を二重に重ねません。素材の移動でドラフトが壊れないよう、参照動画と元字幕を新しいドラフト内にもコピーします。
+バッチ一覧の各項目には `ai: true` や `srt: path/to/source.srt` も指定できます。バッチ内の相対SRTパスは一覧ファイルの場所が基準です。
 
-PC上の元動画から、再描画せずに直接ドラフトを作ることもできます。
+配信間とクリップ間の並列数は別に設定できます。クリップ間はプリセットの `workers`（既定2）。同じURL・形式の再指定は既存の制作へ続行し、成功分を再利用します。別の区間・字幕・AI設定で新規依頼にする場合だけ `--new` を付けます。素材・依頼の保存場所は `~/.shorts-only` が既定で、`.env` の `SHORTS_DATA_DIR` で変更できます。
+
+元動画の指定区間だけをすぐドラフトにする操作も使えます。
 
 ```powershell
 .\run-windows.cmd source C:/work/archive.mp4 --start 120 --end 165 --srt C:/work/archive.srt --streamer_id 01
 ```
 
-この経路は元動画の120〜165秒を参照するタイムラインを作り、MP4の再エンコードもモデル呼び出しも行いません。SRTは元動画と同じ時間軸のものを指定します。元動画はその場所で保管してください。`--copy-media` を付けた場合だけ元動画全体をドラフト内へコピーします。字幕なしで作る場合は `--srt` を省略できます。
+これは再エンコードもモデル呼び出しも行いません。元動画を移動しないでください。素材もコピーして保管する場合は `--copy-media` を付けます。
 
-## 配信者プリセットと演出
+## 編集データの書き出し
 
-`config/streamers.yaml` の配信者ごとに、色・フォント・字幕位置・映像の拡大と位置を設定できます。`video_crop: [x,y,w,h]` で正規化座標の切り抜き、`face` で顔ワイプ用の別レイヤーを指定できます。座標はドラフトに渡す動画基準です。これは固定レイアウトで、自動顔追跡ではありません。
-
-```yaml
-streamers:
-  '01':
-    name: 配信者01
-    accent_color: '#66D9EF'
-    subtitle_y: -0.65
-    hook: auto
-    # 任意の1秒プレビュー開始秒（クリップ内の秒数）
-    hook_seconds: [5, 12, 20]
-    # 任意の本編カット。元動画に戻れるよう対応表を保存します。
-    cuts: [[0, 12.5], [13.2, 30]]
-    # 任意の顔ワイプ。二重音声を避けるため、このレイヤーは無音です。
-    face:
-      crop: [0.7, 0, 0.3, 0.3]
-      scale: 0.35
-      x: 0
-      y: 0.55
+```powershell
+.\run-windows.cmd handoff 制作ID --output C:/work/edit-assets
 ```
 
-`hook: auto` は指定したピーク秒、または字幕の感嘆表現などから最大3か所・各約1秒のプレビューを作ります。Geminiがピークを追加解析したと見せかけず、選定方式を `shorts-only.json` に記録します。字幕や候補が少なければ実際に取れる数で進みます。`hook: off` で本編だけにできます。
+`assets.json`、区間表CSV、タイムラインJSON、編集後の時間軸のSRTを出力します。任意のOpenTimelineIO形式と素材の同梱にも対応します。別リポジトリのDBやAPIへ接続する機能ではありません。詳しくは [編集データの書き出し](docs/HANDOFF.md) を参照してください。
 
-プレビューは選択した本編区間内から作ります。区間の終端に近い候補は、その区間の終わりまでの長さにします。同時発話などで字幕の表示時刻が重なった場合は、時刻を変えず別トラックに配置します。
+構成は [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)、参考にした公開リポジトリと採用範囲は [docs/SOURCES.md](docs/SOURCES.md) に記載しています。
 
-字幕は元のSRT時刻と本編カット・フックの対応表から配置します。フック内の字幕も移動先に合わせます。単語時刻をSRTから推定して捏造する処理はありません。ドラフトは発話単位の編集可能な字幕で、CapCutネイティブの単語カラオケ生成ではありません。ClipForgeの字幕入りMP4では既存の字幕設定を使用します。
-
-明文テンプレートの装飾トラックを流用する場合：
-
-```yaml
-    template_draft: MyShortsTemplate  # 同じCapCutドラフト保存先にあるテンプレート名
-    template_tracks:
-      - kind: text
-        name: brand
-    # video_effect: 利用するpyCapCutのエフェクト名
-```
-
-`template_tracks` で明示した動画・音声・テキストの装飾トラックを新規ドラフトに読み込みます。元テンプレートは編集しません。長さと内容はテンプレートのままなので、装飾用トラックを指定してください。任意の演出が利用できなければその演出を省き、`omitted_features` に理由を残して基本ドラフトを保存します。Pro素材はCapCut側の契約と素材ダウンロードに依存します。暗号化テンプレートには対応していません。
-
-## 保存と納品
-
-既定の保存先は `~/.shorts-only` です。`.env` の `SHORTS_DATA_DIR` で変更できます。SQLite、動画、字幕、個人用設定、`.env` はGitに含めません。
-
-```text
-~/.shorts-only/
-  pipeline.sqlite3
-  jobs/<制作ID>/
-    controller.log
-    delivery-manifest.json
-    drafts.json
-    tiktok-capcut/production-state.json
-    tiktok-capcut/clips/clips/clip-001/...
-```
-
-制作・再接続・ドラフト処理の所要時間と終了コードはSQLiteへ記録します。モデル別の使用量・トークン数はClipForge側の原記録を参照します。ここでは推定課金を新しく作ったり、クレジット適用を推測したりしません。
-
-[ClipForge-Delivery](https://github.com/nyu1791-collab/ClipForge-Delivery)とは別リポジトリです。`delivery-manifest.json` のクリップフォルダをDeliveryの「完成動画を取り込む」に指定できます。ドラフト内で編集した完成版はCapCutから `video.mp4` として新しいフォルダに書き出して取り込みます。自動送信・SNS投稿・DeliveryのDBへの直接書き込みは行いません。
-
-構成と参考元の詳細は [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) と [docs/SOURCES.md](docs/SOURCES.md) にあります。
-
-
-制作の目標・再開・接続の整理は [制作経路の整理](docs/STREAMLINING.md) を参照してください。
+サンプル素材で単独のMP4・ドラフト・OTIO出力を作成しました。Windows版CapCutでの表示と、有料モデルを使う実制作は未実施です。品質監査・検査スクリプトは追加していません。

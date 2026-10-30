@@ -6,8 +6,8 @@ import sys
 from pathlib import Path
 import yaml
 from filelock import FileLock, Timeout
-from . import clipforge, store
-from .settings import clipforge_dir, preset, engine_command
+from . import engine, store
+from .settings import preset
 
 
 def show(value):
@@ -15,7 +15,7 @@ def show(value):
 
 
 def show_drafts(job, root=None, hook=None):
-    records = clipforge.export_drafts(job, root, hook)
+    records = engine.export_drafts(job, root, hook)
     current = store.get(job['id'])
     show({'status':current['status'], 'message':current['error'], 'drafts':records})
 
@@ -32,12 +32,16 @@ def continue_job(job):
         else:
             show({'status':job['status'], 'output':job['output']})
     else:
-        return clipforge.resume(job)
+        return engine.resume(job)
     return 0
 
 
-def run_one(url, streamer, output_format=None, count=None, hook=None, plan=False, new=False):
+def run_one(url, streamer, output_format=None, count=None, hook=None, plan=False, new=False, ai=False, srt=None):
     profile = preset(str(streamer))
+    if ai:
+        profile['analysis']='gemini'
+    if srt:
+        profile['source_srt']=str(Path(srt).expanduser().resolve())
     if count is not None:
         profile['clips'] = count
     if hook is not None:
@@ -48,14 +52,14 @@ def run_one(url, streamer, output_format=None, count=None, hook=None, plan=False
     if plan:
         job = {'url':url, 'format':fmt, 'profile':json.dumps(profile), 'output':'<job-output>'}
         show({'streamer':streamer, 'format':fmt, 'goals':{'seconds':'15-60 (advisory)', 'clips':profile.get('clips',5)},
-              'command':clipforge.command(job), 'model_calls_performed':False})
+              'source':url, 'analysis':profile.get('analysis','offline'), 'model_calls_performed':False})
         return 0
     job, created = store.create(url, profile, fmt, new)
     if not created:
         print(f"既存の制作を再利用します: {job['id']}", flush=True)
         return continue_job(job)
     try:
-        return clipforge.execute(job)
+        return engine.execute(job)
     except Exception as error:
         if store.get(job['id'])['status'] != 'draft_pending':
             store.update(job['id'], 'failed', str(error))
@@ -69,8 +73,10 @@ def main():
     run.add_argument('url')
     run.add_argument('--streamer', '--streamer_id', default='01')
     run.add_argument('--format', choices=['draft','mp4','both'])
-    run.add_argument('--clips', type=int, help='目安本数（ClipForgeの受付は1〜10）')
+    run.add_argument('--clips', type=int, help='目安本数。素材不足で停止しません')
     run.add_argument('--hook', choices=['auto','off'])
+    run.add_argument('--ai', action='store_true', help='設定したVertexで音声選定・文字起こしを行う')
+    run.add_argument('--srt', type=Path, help='元動画の時間軸の字幕')
     run.add_argument('--plan', action='store_true', help='接続・課金せず指示を表示')
     run.add_argument('--new', action='store_true', help='同じURLも別の新規依頼にする')
     batch = sub.add_parser('batch', help='複数配信を並列処理')
@@ -97,16 +103,26 @@ def main():
     source.add_argument('--hook', choices=['auto','off'])
     jobs = sub.add_parser('jobs', help='処理状態と保存先')
     jobs.add_argument('--job', help='制作1件の試行時間と状態を表示')
-    sub.add_parser('connect', help='既存のClipForge接続案内。推論は行わない')
+    handoff = sub.add_parser('handoff', help='編集区間・字幕・素材一覧を書き出す')
+    handoff.add_argument('job')
+    handoff.add_argument('--output', required=True, type=Path)
+    handoff.add_argument('--copy-media', action='store_true')
+    handoff.add_argument('--otio', action='store_true', help='任意のOpenTimelineIO出力')
+    connect = sub.add_parser('connect', help='単独制作の接続設定を表示。モデルは呼ばない')
+    connect.add_argument('--streamer', '--streamer_id', default='01')
     args = parser.parse_args()
     try:
         if args.action == 'run':
-            return run_one(args.url,args.streamer,args.format,args.clips,args.hook,args.plan,args.new)
+            return run_one(args.url,args.streamer,args.format,args.clips,args.hook,args.plan,args.new,args.ai,args.srt)
         if args.action == 'batch':
             entries = yaml.safe_load(args.file.read_text(encoding='utf-8'))['jobs']
             def process(item):
                 try:
-                    return run_one(item['url'],str(item['streamer']),item.get('format'),item.get('clips'),item.get('hook'),args.plan)
+                    srt=item.get('srt')
+                    if srt and not Path(srt).is_absolute():
+                        srt=args.file.parent/str(srt)
+                    return run_one(item['url'],str(item['streamer']),item.get('format'),item.get('clips'),
+                                   item.get('hook'),args.plan,ai=item.get('ai',False),srt=srt)
                 except Exception as error:
                     streamer = item.get('streamer', '?') if isinstance(item, dict) else '?'
                     print(f"{streamer}: {error}", file=sys.stderr, flush=True)
@@ -122,9 +138,18 @@ def main():
                 show(job)
             else:
                 show(store.listing())
+        elif args.action == 'handoff':
+            from .handoff import export_job
+            show(export_job(store.get(args.job),args.output,args.copy_media,args.otio))
         elif args.action == 'connect':
-            cmd = engine_command('produce_with_gemini.py', '--connections')
-            return subprocess.run(cmd, cwd=clipforge_dir()).returncode
+            import os
+            profile=preset(args.streamer)
+            show({'mode':'standalone','project':profile.get('project') or os.getenv('GOOGLE_CLOUD_PROJECT',''),
+                  'location':profile.get('location','global'),
+                  'selection_model':profile.get('selection_model','gemini-3.8-flash'),
+                  'transcription_model':profile.get('transcription_model','gemini-3.5-transcribe'),
+                  'cleanup_model':profile.get('cleanup_model','gemini-3.5-flash'),
+                  'capcut_drafts_dir':str(engine.drafts_dir() or ''),'model_requests':0})
         elif args.action == 'resume':
             return continue_job(store.get(args.job))
         elif args.action == 'draft':
@@ -135,7 +160,7 @@ def main():
                     show_drafts(job,args.drafts_dir,args.hook)
             else:
                 from .capcut import export
-                root = args.drafts_dir or clipforge.drafts_dir()
+                root = args.drafts_dir or engine.drafts_dir()
                 if root is None:
                     raise ValueError('--drafts-dir または CAPCUT_DRAFTS_DIR を指定してください')
                 profile = preset(args.streamer)
@@ -144,7 +169,7 @@ def main():
                 show(export(args.clip,root,profile))
         elif args.action == 'source':
             from .capcut import export
-            root = args.drafts_dir or clipforge.drafts_dir()
+            root = args.drafts_dir or engine.drafts_dir()
             if root is None:
                 raise ValueError('--drafts-dir または CAPCUT_DRAFTS_DIR を指定してください')
             profile = preset(args.streamer)

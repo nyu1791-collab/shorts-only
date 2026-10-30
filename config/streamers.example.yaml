@@ -1,6 +1,11 @@
 # Copy to streamers.yaml. Personal channel information stays on your computer.
 defaults:
   clips: 5
+  workers: 2
+  analysis: offline           # offline / gemini (--ai)
+  target_seconds: 45          # 目安。短い素材で不足しても続行
+  # source_srt: C:/work/source.srt
+  # project: your-google-cloud-project
   format: draft               # draft / mp4 / both (clean MP4 + draft)
   hook: auto                  # auto / off
   width: 720

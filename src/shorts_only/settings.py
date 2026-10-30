@@ -18,17 +18,6 @@ def data_dir():
     return path
 
 
-def clipforge_dir():
-    return location(os.getenv('CLIPFORGE_DIR') or '../ClipForge')
-
-
-def engine_command(script, *arguments):
-    engine = clipforge_dir()
-    configured = os.getenv('CLIPFORGE_PYTHON')
-    python = location(configured) if configured else engine / '.venv' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
-    return [str(python), str(engine / 'tools' / script), *map(str, arguments)]
-
-
 def preset(streamer):
     path = location(os.getenv('SHORTS_STREAMERS') or 'config/streamers.yaml')
     if not path.exists():
