@@ -101,3 +101,7 @@ $env:GOOGLE_CLOUD_PROJECT = '利用するプロジェクトID'
 構成は [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)、参考にした公開リポジトリと採用範囲は [docs/SOURCES.md](docs/SOURCES.md) に記載しています。
 
 サンプル素材で単独のMP4・ドラフト・OTIO出力を作成しました。Windows版CapCutでの表示と、有料モデルを使う実制作は未実施です。品質監査・検査スクリプトは追加していません。
+
+## 関連リポジトリ
+
+制作パイプライン全体の構成と各リポジトリの役割は [ClipForge の README](https://github.com/nyu1791-collab/ClipForge#関連リポジトリ) を参照してください。
