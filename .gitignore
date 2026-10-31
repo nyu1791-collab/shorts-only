@@ -14,3 +14,12 @@ outputs/
 *.srt
 *.ass
 *.zip
+
+# PC-local optional automation state
+.venv-research/
+workstation/local.json
+workstation/*.local.json
+
+.ruff_cache/
+
+.pytest_cache/

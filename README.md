@@ -1,3 +1,5 @@
+新しいWindows PCへの導入・素材移行・投稿用素材パックは [PC移行ガイド](workstation/README.md) を参照してください。既存の制作入口とモデルは維持します。
+
 # shorts-only
 
 ローカル動画や公開動画URLから、縦型ショート動画・編集可能なCapCutドラフトを制作する独立したPythonアプリです。**他のリポジトリ、ClipForgeの環境、GitHub Actionsを必要としません。**
