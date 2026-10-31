@@ -112,7 +112,10 @@ $env:GOOGLE_CLOUD_PROJECT = '利用するプロジェクトID'
 | `encoder` | libx264 / h264_nvenc | GPUがあれば h264_nvenc |
 | `background` | blur / black | 横素材の上下の埋め方 |
 | `denoise` | true / false | 環境ノイズを軽く除去 |
-| `jump_cuts` | true / false | 無音を詰める（字幕も追従）。余白は `jump_margin` |
+| `jetcut` | true / false | 無音を詰める（ドラフトと共通。MP4は字幕も追従）。余白は `jetcut_margin` |
+| `bgm` | 音声ファイル | BGM。話している間は自動で下がる（音量は `bgm_volume`） |
+
+各クリップには代表的な1枚を選んだ `thumbnail.jpg` も作ります。
 
 ## 関連リポジトリ
 

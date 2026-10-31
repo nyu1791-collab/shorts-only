@@ -177,10 +177,10 @@ def execute(job,resume=False):
                 length=duration
                 if job['format'] in ('mp4','both') and not (clip/'video.mp4').is_file():
                     cut=None
-                    if profile.get('jump_cuts'):
-                        # Remove dead air (auto-editor style) and move captions with the cut.
+                    if profile.get('jetcut'):
+                        # Same setting as the draft's silence removal; captions move with the cut.
                         ranges=fr.keep_ranges(duration,fr.detect_silences(video,start=start,duration=duration),
-                                              margin=float(profile.get('jump_margin',0.15)))
+                                              margin=float(profile.get('jetcut_margin',0.12)))
                         if len(ranges)>1:
                             cut=fr.jump_cut_filter(ranges)
                             length=sum(b-a for a,b in ranges)
@@ -205,7 +205,16 @@ def execute(job,resume=False):
                         subprocess.run(['ffmpeg','-nostdin','-v','error','-y','-ss',str(start),'-i',str(video),'-t',str(duration),
                             '-vf',vf,'-af',af,*fr.delivery_args(profile.get('quality','standard'),profile.get('encoder','libx264')),
                             'video.next.mp4'],cwd=clip,check=True,stdout=log,stderr=subprocess.STDOUT)
+                    if profile.get('bgm'):
+                        # Ducked music bed under the voice; the video stream is copied, not re-encoded.
+                        fr.add_music(clip/'video.next.mp4',location(profile['bgm']),clip/'video.bgm.mp4',
+                                     float(profile.get('bgm_volume',0.18)))
+                        (clip/'video.bgm.mp4').replace(clip/'video.next.mp4')
                     (clip/'video.next.mp4').replace(clip/'video.mp4')
+                    try:
+                        fr.thumbnail(clip/'video.mp4',clip/'thumbnail.jpg')
+                    except (OSError,subprocess.CalledProcessError):
+                        pass  # A thumbnail is optional; never fail a finished clip over it.
                 save(receipt,{'key':f'{source_key}:{start}:{end}','status':'ready','selection':item,
                     'media':{**media,'duration':length,**({'width':width,'height':height} if job['format'] in ('mp4','both') else {})},'captions':{'caption_mode':'burned' if cues and job['format'] in ('mp4','both') else 'editable'}})
             except Exception as error:

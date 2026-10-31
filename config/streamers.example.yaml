@@ -23,8 +23,9 @@ defaults:
   encoder: libx264            # libx264 / h264_nvenc（GPUがある場合）
   background: blur            # blur（ぼかし背景で縦を埋める） / black
   denoise: false              # true で環境ノイズを軽く除去
-  jump_cuts: false            # true で無音を詰める（字幕も追従）
-  jump_margin: 0.15           # 無音カット時に残す前後の余白（秒）
+  jetcut_margin: 0.12         # 無音カット（jetcut: true）で残す前後の余白（秒）。MP4とドラフト共通の jetcut を使う
+  # bgm: C:/work/music/bgm.mp3  # BGM。話している間は自動で下がる（ダッキング）
+  bgm_volume: 0.18            # BGMの音量（0〜1）
   # Optional explicit main-body ranges in clip-relative seconds:
   # cuts: [[0, 12.5], [13.2, 30]]
 streamers:
@@ -35,7 +36,7 @@ streamers:
     name: 配信者02
     accent_color: '#FF8FA3'
 # Add these settings under an individual streamer when needed:
-#   jetcut: true               # optional FFmpeg silence removal, default off
+#   jetcut: true               # 無音を詰める（ドラフトとMP4。MP4は字幕も追従）。既定オフ
 #   hook_seconds: [5, 12, 20]   # clip-relative peak points
 #   video_crop: [0, 0, 1, 1]    # x, y, width, height in normalized source coordinates
 #   face: {crop: [0.7, 0, 0.3, 0.3], scale: 0.35, x: 0, y: 0.55}
