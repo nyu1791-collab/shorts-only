@@ -28,6 +28,39 @@ def _ass_color(value,default='FFFFFF'):
     return '&H00'+value[4:6]+value[2:4]+value[0:2]
 
 
+def _hex(value,default):
+    value=str(value or default).lstrip('#')
+    return value.upper() if len(value)==6 else default
+
+
+def hook_title(item,profile):
+    """The clip's own headline for the opening banner; generic numbered titles are skipped."""
+    if profile.get('hook_banner','auto')=='off':
+        return ''
+    title=' '.join(str(item.get('title') or '').split())
+    if not title or title.startswith(f"{profile.get('name','')} ショート") or title.startswith('切り抜き '):
+        return ''
+    return title[:40]
+
+
+def write_hook(path,title,width,height,profile):
+    """Top banner for the first 3 seconds (ASS, boxed text, fade in/out)."""
+    rgb=_hex(profile.get('accent_color'),'FFE568')
+    colour='&H00'+rgb[4:6]+rgb[2:4]+rgb[0:2]
+    text=title.replace('\\','＼').replace('{','（').replace('}','）')
+    size=round(height*0.046)
+    path.write_text('\n'.join([
+        '[Script Info]','ScriptType: v4.00+',f'PlayResX: {width}',f'PlayResY: {height}','WrapStyle: 0','',
+        '[V4+ Styles]',
+        'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, '
+        'Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
+        f"Style: Hook,{profile.get('burn_font') or 'Noto Sans CJK JP'},{size},{colour},&H000000FF,&H00101010,&H90000000,"
+        f"-1,0,0,0,100,100,0,0,3,{round(size*0.35)},0,8,{round(width*0.06)},{round(width*0.06)},{round(height*0.08)},1",
+        '','[Events]','Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
+        'Dialogue: 0,0:00:00.00,0:00:03.00,Hook,,0,0,0,,{\\fad(150,300)}'+text,'']),encoding='utf-8')
+    return path
+
+
 def caption_style(profile):
     """Bold, outlined captions sized for vertical video. Libass scales SRT styles
     from a 288px-high script, so sizes here are relative to that."""
@@ -193,6 +226,14 @@ def execute(job,resume=False):
                         vf=cut[0]+','+vf
                     if cues:
                         vf+=",subtitles=captions.srt:force_style='"+caption_style(profile)+"'"
+                    if hook_title(item,profile):
+                        write_hook(clip/'hook.ass',hook_title(item,profile),width,height,profile)
+                        vf+=',ass=hook.ass'
+                    if profile.get('progress_bar',True):
+                        # A thin bar that grows to the end: viewers see how much is left.
+                        bar=max(6,round(height*0.008))
+                        vf+=(f",drawbox=x=0:y=ih-{bar}:w='iw*t/{length:.3f}':h={bar}"
+                             f":color=0x{_hex(profile.get('accent_color'),'FFE568')}@0.95:t=fill")
                     video_fade,audio_fade=fr.fades(length)
                     if video_fade:
                         vf+=','+video_fade

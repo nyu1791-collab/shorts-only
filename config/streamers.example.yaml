@@ -23,6 +23,8 @@ defaults:
   encoder: libx264            # libx264 / h264_nvenc（GPUがある場合）
   background: blur            # blur（ぼかし背景で縦を埋める） / black
   denoise: false              # true で環境ノイズを軽く除去
+  hook_banner: auto           # auto=AI選定の見出しを冒頭3秒、上部に表示 / off
+  progress_bar: true          # 下端に残り時間が分かる細いバー
   jetcut_margin: 0.12         # 無音カット（jetcut: true）で残す前後の余白（秒）。MP4とドラフト共通の jetcut を使う
   # bgm: C:/work/music/bgm.mp3  # BGM。話している間は自動で下がる（ダッキング）
   bgm_volume: 0.18            # BGMの音量（0〜1）

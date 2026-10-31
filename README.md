@@ -114,6 +114,8 @@ $env:GOOGLE_CLOUD_PROJECT = '利用するプロジェクトID'
 | `denoise` | true / false | 環境ノイズを軽く除去 |
 | `jetcut` | true / false | 無音を詰める（ドラフトと共通。MP4は字幕も追従）。余白は `jetcut_margin` |
 | `bgm` | 音声ファイル | BGM。話している間は自動で下がる（音量は `bgm_volume`） |
+| `hook_banner` | auto / off | AI選定の見出しを冒頭3秒、上部に帯で表示（番号だけの見出しは出さない） |
+| `progress_bar` | true / false | 下端に残り時間が分かる細いバー |
 
 各クリップには代表的な1枚を選んだ `thumbnail.jpg` も作ります。
 
