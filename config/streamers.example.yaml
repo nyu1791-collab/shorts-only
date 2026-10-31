@@ -18,6 +18,13 @@ defaults:
   video_scale: 1
   video_x: 0
   video_y: 0
+  # MP4仕上げ（src/shorts_only/ffmpeg_recipes.py）
+  quality: standard           # draft(最速) / standard / high(最高画質)
+  encoder: libx264            # libx264 / h264_nvenc（GPUがある場合）
+  background: blur            # blur（ぼかし背景で縦を埋める） / black
+  denoise: false              # true で環境ノイズを軽く除去
+  jump_cuts: false            # true で無音を詰める（字幕も追従）
+  jump_margin: 0.15           # 無音カット時に残す前後の余白（秒）
   # Optional explicit main-body ranges in clip-relative seconds:
   # cuts: [[0, 12.5], [13.2, 30]]
 streamers:

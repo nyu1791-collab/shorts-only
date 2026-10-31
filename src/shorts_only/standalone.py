@@ -9,6 +9,7 @@ import subprocess
 import urllib.parse
 import urllib.request
 from filelock import FileLock
+from . import ffmpeg_recipes as fr
 from . import store
 from .settings import location
 from .timeline import read_srt, remap, srt_text, build
@@ -18,6 +19,25 @@ def save(path, value):
     temporary=path.with_suffix('.tmp')
     temporary.write_text(json.dumps(value,ensure_ascii=False,indent=2),encoding='utf-8')
     temporary.replace(path)
+
+
+
+def _ass_color(value,default='FFFFFF'):
+    value=str(value or default).lstrip('#')
+    value=value if len(value)==6 else default
+    return '&H00'+value[4:6]+value[2:4]+value[0:2]
+
+
+def caption_style(profile):
+    """Bold, outlined captions sized for vertical video. Libass scales SRT styles
+    from a 288px-high script, so sizes here are relative to that."""
+    size=round(float(profile.get('subtitle_size',8))*1.75)
+    margin=max(8,round((1+float(profile.get('subtitle_y',-0.65)))/2*288))
+    font=profile.get('burn_font') or 'Noto Sans CJK JP'
+    return ','.join([f'Fontname={font}',f'FontSize={size}','Bold=1',
+        f"PrimaryColour={_ass_color(profile.get('subtitle_color'))}",'OutlineColour=&H00000000',
+        'BackColour=&H80000000','BorderStyle=1','Outline=1.6','Shadow=0.6','Alignment=2',
+        f'MarginV={margin}','MarginL=16','MarginR=16'])
 
 
 def acquire(job):
@@ -153,18 +173,41 @@ def execute(job,resume=False):
                 (clip/'captions.srt').write_text(srt_text(cues),encoding='utf-8')
                 save(clip/'source.json',{'video':str(video),'start':start,'end':end,
                                        'srt':str(source_srt) if source_srt else None})
+                width,height=int(profile.get('width',720)),int(profile.get('height',1280))
+                length=duration
                 if job['format'] in ('mp4','both') and not (clip/'video.mp4').is_file():
-                    width,height=int(profile.get('width',720)),int(profile.get('height',1280))
-                    vf=f'scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2'
+                    cut=None
+                    if profile.get('jump_cuts'):
+                        # Remove dead air (auto-editor style) and move captions with the cut.
+                        ranges=fr.keep_ranges(duration,fr.detect_silences(video,start=start,duration=duration),
+                                              margin=float(profile.get('jump_margin',0.15)))
+                        if len(ranges)>1:
+                            cut=fr.jump_cut_filter(ranges)
+                            length=sum(b-a for a,b in ranges)
+                            cues=[{**c,'start':fr.remap_time(c['start'],ranges),'end':fr.remap_time(c['end'],ranges)}
+                                  for c in cues]
+                            cues=[c for c in cues if c['end']-c['start']>0.05]
+                            (clip/'captions.srt').write_text(srt_text(cues),encoding='utf-8')
+                    vf=fr.fit_frame(width,height,profile.get('background','blur'))
+                    if cut:
+                        vf=cut[0]+','+vf
                     if cues:
-                        vf+=',subtitles=captions.srt'
+                        vf+=",subtitles=captions.srt:force_style='"+caption_style(profile)+"'"
+                    video_fade,audio_fade=fr.fades(length)
+                    if video_fade:
+                        vf+=','+video_fade
+                    af=fr.voice_chain(denoise=bool(profile.get('denoise',False)))
+                    if cut:
+                        af=cut[1]+','+af
+                    if audio_fade:
+                        af+=','+audio_fade
                     with (clip/'render.log').open('ab') as log:
                         subprocess.run(['ffmpeg','-nostdin','-v','error','-y','-ss',str(start),'-i',str(video),'-t',str(duration),
-                            '-vf',vf,'-c:v','libx264','-preset','veryfast','-crf','23','-c:a','aac','-movflags','+faststart','video.next.mp4'],
-                            cwd=clip,check=True,stdout=log,stderr=subprocess.STDOUT)
+                            '-vf',vf,'-af',af,*fr.delivery_args(profile.get('quality','standard'),profile.get('encoder','libx264')),
+                            'video.next.mp4'],cwd=clip,check=True,stdout=log,stderr=subprocess.STDOUT)
                     (clip/'video.next.mp4').replace(clip/'video.mp4')
                 save(receipt,{'key':f'{source_key}:{start}:{end}','status':'ready','selection':item,
-                    'media':{**media,'duration':duration,**({'width':width,'height':height} if job['format'] in ('mp4','both') else {})},'captions':{'caption_mode':'burned' if cues and job['format'] in ('mp4','both') else 'editable'}})
+                    'media':{**media,'duration':length,**({'width':width,'height':height} if job['format'] in ('mp4','both') else {})},'captions':{'caption_mode':'burned' if cues and job['format'] in ('mp4','both') else 'editable'}})
             except Exception as error:
                 message=f'{clip.name}: {error}'
                 print(message,flush=True)

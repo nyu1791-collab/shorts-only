@@ -102,6 +102,18 @@ $env:GOOGLE_CLOUD_PROJECT = '利用するプロジェクトID'
 
 サンプル素材で単独のMP4・ドラフト・OTIO出力を作成しました。Windows版CapCutでの表示と、有料モデルを使う実制作は未実施です。品質監査・検査スクリプトは追加していません。
 
+## MP4の仕上げ
+
+`format: mp4/both` の書き出しは `src/shorts_only/ffmpeg_recipes.py` を使います。ぼかし背景で縦画面を埋め、太字・縁取りの字幕を焼き込み、声を整えます（低域カット、圧縮、-14 LUFS）。0.25秒のフェードを入れ、BT.709 タグと faststart を付けて書き出します。`config/streamers.yaml` で次を指定できます。
+
+| 設定 | 値 | 内容 |
+|---|---|---|
+| `quality` | draft / standard / high | 速度と画質のバランス（既定 standard） |
+| `encoder` | libx264 / h264_nvenc | GPUがあれば h264_nvenc |
+| `background` | blur / black | 横素材の上下の埋め方 |
+| `denoise` | true / false | 環境ノイズを軽く除去 |
+| `jump_cuts` | true / false | 無音を詰める（字幕も追従）。余白は `jump_margin` |
+
 ## 関連リポジトリ
 
 制作パイプライン全体の構成と各リポジトリの役割は [ClipForge の README](https://github.com/nyu1791-collab/ClipForge#関連リポジトリ) を参照してください。
