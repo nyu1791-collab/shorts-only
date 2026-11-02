@@ -9,3 +9,7 @@
 - Transcribeの元単語時刻と話者を保存し、整文後の単語時刻を捏造しない。
 - 保存済み応答・動画・ドラフトを再利用する。構築だけを理由に本番API・GPU・検査スクリプトを起動しない。
 - 個人用設定、動画、字幕、DB、資格情報を公開Gitに含めない。日本語で報告する。
+
+## 動画制作の統一
+
+動画を作る・編集するときは、`C:\Users\nyu17\yu-lab\repos\voiceBox-Pipeline\docs\VIDEO_PRODUCTION_STANDARD.md` を読み、その目標に合わせる。ノウハウは同じフォルダの `VIDEO_KNOWHOW.md`。このリポジトリ固有の手順が優先する。GitHubへの反映は、利用者の指示があるまでしない。
